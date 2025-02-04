@@ -3,14 +3,19 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
-
-// Middleware
 app.use(cors());
 app.use(express.json());
+
+// Import Routes
+const authRoutes = require("./routes/authRoutes");
+const interviewRoutes = require("./routes/interviewRoutes");
+
+// Use Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/interview", interviewRoutes);
 
 // MongoDB Connection
 const connectDB = async () => {
@@ -26,12 +31,6 @@ const connectDB = async () => {
   }
 };
 
-// Default Route
-app.get("/", (req, res) => {
-  res.send("✅ Smart Interview Assist Backend is Running...");
-});
-
-// Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   await connectDB();

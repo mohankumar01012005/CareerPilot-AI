@@ -1,38 +1,36 @@
 const express = require("express");
-const mongoose = require("mongoose");
 const dotenv = require("dotenv");
+const mongoose = require("mongoose");
 const cors = require("cors");
+const authRoutes = require("./routes/authRoutes.js");
+const interviewRoutes = require("./routes/interviewRoutes.js");
 
 dotenv.config();
-
 const app = express();
-app.use(cors());
+
+// Middleware
 app.use(express.json());
-
-// Import Routes
-const authRoutes = require("./routes/authRoutes");
-const interviewRoutes = require("./routes/interviewRoutes");
-
-// Use Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/interview", interviewRoutes);
+app.use(cors());
 
 // MongoDB Connection
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log("✅ MongoDB connected successfully"))
+    .catch((err) => {
+        console.error("❌ MongoDB connection error:", err);
+        process.exit(1);
     });
-    console.log("✅ MongoDB Connected");
-  } catch (error) {
-    console.error("❌ MongoDB Connection Failed:", error);
-    process.exit(1);
-  }
-};
 
+// Use Routes
+app.use("/auth", authRoutes);
+app.use("/api/interviews", interviewRoutes); // 🔹 Fixed path: Use `/api/interviews`
+
+// Default Route
+app.get("/", (req, res) => {
+    res.send("CareerPilot-AI Backend is Running...");
+});
+
+// Start Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, async () => {
-  await connectDB();
-  console.log(`🚀 Server is running on port ${PORT}`);
+app.listen(PORT, () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
 });

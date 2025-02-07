@@ -1,14 +1,14 @@
 const express = require("express");
 const router = express.Router();
-const User = require("../models/User");
-const bcrypt = require("bcryptjs");
+
+const User = require("../models/user")
 
 // 🔹 User Registration
 router.post("/register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ name, email, password: hashedPassword });
+    console.log("Password " ,password);
+    const newUser = new User({ name, email, password });
     await newUser.save();
     res.status(201).json({ message: "User registered successfully" });
   } catch (error) {
@@ -16,21 +16,25 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// 🔹 User Login
+
+// 🔹 User Login - Return userId for tracking
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
+    console.log("User:", user);
+    console.log(user.password);
     if (!user) return res.status(400).json({ message: "User not found" });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
-
-    res.status(200).json({ message: "Login successful", userId: user._id });
+    if (password !== user.password) {
+      return res.status(400).json({ message: "Please correct your password. Invalid credentials" });
+    }
+    res.status(200).json({ message: "Login successful", userId: user._id, name: user.name });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+
 
 // 🔹 Update User Profile
 router.put("/update/:id", async (req, res) => {

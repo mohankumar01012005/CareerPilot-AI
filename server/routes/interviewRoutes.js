@@ -7,96 +7,142 @@ require("dotenv").config();
 const genAI = new GoogleGenerativeAI(process.env.API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// 🔹 Function to generate AI response
+// 🔹 Helper Function: Generate AI Response
 const generateResponse = async (prompt) => {
   try {
-    console.log("🔹 Sending prompt to AI:", prompt);
+    console.log("🔹 AI Prompt:", prompt);
     const result = await model.generateContent(prompt);
-    if (!result || !result.response || !result.response.text()) {
-      throw new Error("Invalid AI response");
-    }
-    console.log("✅ AI Response:", result.response.text());
     return result.response.text();
   } catch (err) {
-    console.error("❌ AI Generation Error:", err);
+    console.error("❌ AI Error:", err);
     return "Error generating response";
   }
 };
 
-// 🔹 1️⃣ Get All Interviews for a User
-router.get("/history/:userId", async (req, res) => {
-  try {
-    const interviews = await InterviewSession.find({ userId: req.params.userId }).sort({ date: -1 });
-    res.json(interviews);
-  } catch (error) {
-    console.error("❌ Error fetching history:", error);
-    res.status(500).json({ error: "Error fetching interview history" });
-  }
-});
-
-// 🔹 2️⃣ Start a New Interview
+// 🔹 1️⃣ Start Interview (with difficulty selection)
 router.post("/start", async (req, res) => {
-  const { role, userId } = req.body;
+  const { role, userId, difficulty } = req.body;
 
-  if (!role || !userId) {
-    return res.status(400).json({ error: "Role and userId are required" });
+  if (!role || !userId || !difficulty) {
+    return res.status(400).json({ error: "Role, userId, and difficulty are required" });
   }
 
-  const prompt = `Conduct a job interview for a ${role} position. Ask one question at a time. Start now.`;
+  if (!["easy", "medium", "hard"].includes(difficulty.toLowerCase())) {
+    return res.status(400).json({ error: "Invalid difficulty level" });
+  }
+
+  const difficultyPrompts = {
+    easy: "Ask simple and basic questions suitable for beginners.",
+    medium: "Ask intermediate-level questions that test real-world understanding.",
+    hard: "Ask advanced questions that require deep expertise and critical thinking.",
+  };
+
+  const prompt = `Conduct a ${difficulty} job interview for a ${role} position. ${difficultyPrompts[difficulty]}`;
 
   try {
-    console.log("🔹 Generating first question...");
+    console.log(`🔹 Generating first ${difficulty} question...`);
     const firstQuestion = await generateResponse(prompt);
-    console.log("✅ First Question:", firstQuestion);
 
     const newSession = new InterviewSession({
       userId,
-      title: `Interview for ${role}`,
+      title: `Interview for ${role} (${difficulty})`,
       role,
-      conversationHistory: [{ question: firstQuestion, userResponse: "" }],
+      difficulty,
+      conversationHistory: [{ question: firstQuestion, userResponse: "", timestamp: Date.now() }],
+      startTime: Date.now(),
+      endTime: Date.now() + 30 * 60 * 1000, // 30-minute limit
     });
 
-    console.log("🔹 Saving interview session to DB:", newSession);
     await newSession.save();
-    console.log("✅ Interview session saved!");
 
-    res.json({ sessionId: newSession._id, question: firstQuestion });
+    res.json({ sessionId: newSession._id, question: firstQuestion, timeLimit: 5 * 60 * 1000 });
   } catch (err) {
     console.error("❌ Error starting interview:", err);
     res.status(500).json({ error: "Error starting interview", details: err.message });
   }
 });
 
-// 🔹 3️⃣ Process User Answer & Get Next Question
+// 🔹 2️⃣ Process Answer & Get Next Question
 router.post("/process", async (req, res) => {
   const { sessionId, answer } = req.body;
 
-  if (!sessionId || !answer) {
-    return res.status(400).json({ error: "Session ID and answer are required" });
+  if (!sessionId) {
+    return res.status(400).json({ error: "Session ID is required" });
   }
 
   try {
     const session = await InterviewSession.findById(sessionId);
     if (!session) return res.status(404).json({ error: "Session not found" });
 
-    const lastQuestion = session.conversationHistory[session.conversationHistory.length - 1].question;
+    if (Date.now() > session.endTime) {
+      session.status = "completed";
+      await session.save();
+      return res.json({ error: "Interview time is over. Please review your answers." });
+    }
 
-    const feedbackPrompt = `Evaluate this answer for a ${session.role} interview question: "${lastQuestion}". Answer: "${answer}". Provide feedback.`;
-    const nextQuestionPrompt = `Ask the next important interview question for a ${session.role} position.`;
+    // Generate feedback based on difficulty level
+    let feedback = "";
+    if (answer) {
+      const lastQuestion = session.conversationHistory[session.conversationHistory.length - 1].question;
+      const feedbackPrompt = `Evaluate this answer for a ${session.role} interview question (Difficulty: ${session.difficulty}).
+      Question: "${lastQuestion}". Answer: "${answer}". Provide detailed feedback accordingly.`;
 
-    const feedback = await generateResponse(feedbackPrompt);
+      feedback = await generateResponse(feedbackPrompt);
+    }
+
+    // Generate next question based on difficulty
+    const nextQuestionPrompt = `Ask the next interview question for a ${session.role} role (Difficulty: ${session.difficulty}).`;
     const nextQuestion = await generateResponse(nextQuestionPrompt);
 
-    session.conversationHistory[session.conversationHistory.length - 1].userResponse = answer;
-    session.conversationHistory[session.conversationHistory.length - 1].feedback = feedback;
-    session.conversationHistory.push({ question: nextQuestion, userResponse: "" });
+    session.conversationHistory.push({
+      question: nextQuestion,
+      userResponse: answer,
+      feedback,
+      timestamp: Date.now(),
+    });
 
     await session.save();
 
-    res.json({ feedback, nextQuestion });
+    res.json({ feedback, nextQuestion, timeLimit: 5 * 60 * 1000 });
   } catch (err) {
     console.error("❌ Error processing answer:", err);
     res.status(500).json({ error: "Error processing answer", details: err.message });
+  }
+});
+
+// 🔹 3️⃣ Skip Question
+router.post("/skip", async (req, res) => {
+  const { sessionId } = req.body;
+
+  if (!sessionId) {
+    return res.status(400).json({ error: "Session ID is required" });
+  }
+
+  try {
+    const session = await InterviewSession.findById(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    if (Date.now() > session.endTime) {
+      session.status = "completed";
+      await session.save();
+      return res.json({ error: "Interview time is over. Please review your answers." });
+    }
+
+    const nextQuestionPrompt = `Ask the next interview question for a ${session.role} role (Difficulty: ${session.difficulty}).`;
+    const nextQuestion = await generateResponse(nextQuestionPrompt);
+
+    session.conversationHistory.push({
+      question: nextQuestion,
+      userResponse: "Skipped",
+      timestamp: Date.now(),
+    });
+
+    await session.save();
+
+    res.json({ nextQuestion, timeLimit: 5 * 60 * 1000 });
+  } catch (err) {
+    console.error("❌ Error skipping question:", err);
+    res.status(500).json({ error: "Error skipping question", details: err.message });
   }
 });
 
@@ -112,7 +158,7 @@ router.post("/end", async (req, res) => {
     const session = await InterviewSession.findById(sessionId);
     if (!session) return res.status(404).json({ error: "Session not found" });
 
-    const summaryPrompt = `Provide a detailed evaluation for this interview for a ${session.role} role based on these answers: ${session.conversationHistory.map(entry => `"${entry.userResponse}"`).join(" | ")}`;
+    const summaryPrompt = `Provide a final evaluation for this interview (Difficulty: ${session.difficulty}) based on these responses: ${session.conversationHistory.map(entry => `"${entry.userResponse}"`).join(" | ")}`;
 
     const summary = await generateResponse(summaryPrompt);
 

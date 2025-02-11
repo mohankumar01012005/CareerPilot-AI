@@ -1,9 +1,9 @@
 import React from 'react';
-
+import Interview from './pages/Interview';
 const App = () => {
   return (
     <div>
-      <h1 className='text-3xl'>Hello</h1>
+      <Interview></Interview>
     </div>
   );
 }

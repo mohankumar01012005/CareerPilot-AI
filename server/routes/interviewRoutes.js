@@ -172,4 +172,27 @@ router.post("/end", async (req, res) => {
   }
 });
 
+// 🔹 5️⃣ Get Interview History for a User
+router.get("/history/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({ error: "User ID is required" });
+    }
+
+    // Find all interview sessions for the user
+    const history = await InterviewSession.find({ userId }).sort({ startTime: -1 });
+
+    if (!history.length) {
+      return res.status(404).json({ message: "No interview history found for this user." });
+    }
+
+    res.status(200).json(history);
+  } catch (error) {
+    console.error("❌ Error fetching interview history:", error);
+    res.status(500).json({ error: "Error fetching interview history", details: error.message });
+  }
+});
+
 module.exports = router;

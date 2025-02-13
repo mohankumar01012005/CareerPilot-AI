@@ -1,203 +1,214 @@
-  import { useEffect, useState } from "react";
-  import axios from "axios";
-  import { Button } from "../components/Button";
-  import { Input } from "../components/Input";
-  import React from "react";
-  function Interview() {
-    const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("user")) || null); // Maintain session
-    const [messages, setMessages] = useState([]); // Chat messages
-    const [input, setInput] = useState(""); // User input message
-    const [history, setHistory] = useState([]); // Chat history
-    const [showAuthPopup, setShowAuthPopup] = useState(false); // Auth popup visibility
-    const [authMode, setAuthMode] = useState("login"); // "login" or "signup"
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { Button } from "../components/Button";
+import { Input } from "../components/Input";
+import React from "react";
 
-    useEffect(() => {
-      if (user) {
-        fetchHistory();
-      }
-    }, [user]);
-  console.log("User ",user);
-      const fetchHistory = async () => {
-        try {
-          const response = await axios.get(`http://localhost:5000/api/interviews/history/${user._id}`);
-          setHistory(response.data.history);
-        } catch (error) {
-          console.error("Error fetching history:", error);
-        }
-    };
+function Interview() {
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("user")) || null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [history, setHistory] = useState([]);
+  const [showAuthPopup, setShowAuthPopup] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [role, setRole] = useState("");
+  const [difficulty, setDifficulty] = useState("");
+  const [showRolePopup, setShowRolePopup] = useState(false);
+  const [authData, setAuthData] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [interviewStarted, setInterviewStarted] = useState(false);
 
-    const handleSendMessage = async () => {
-      if (!user) {
-        setShowAuthPopup(true);
-        return;
-      }
+  useEffect(() => {
+    if (user) {
+      fetchHistory();
+      setShowRolePopup(true);
+    }
+  }, [user]);
 
-      if (!input.trim()) return;
+  const fetchHistory = async () => {
+    try {
+      const response = await axios.get(`http://localhost:5000/api/interviews/history/${user._id}`);
+      setHistory(response.data.history);
+    } catch (error) {
+      console.error("Error fetching history:", error);
+    }
+  };
 
-      const userMessage = { text: input, sender: "user" };
-      setMessages([...messages, userMessage]);
+  const handleAuth = async () => {
+    setError(""); 
 
-      try {
-        const response = await axios.post(`http://localhost:5000/api/interviews/process`, {
-          userId: user.id,
-          message: input,
-        });
+    try {
+      const url = authMode === "login" ? "/auth/login" : "/auth/register";
+      const { data } = await axios.post(`http://localhost:5000${url}`, authData);
 
-        setMessages([...messages, userMessage, { text: response.data.reply, sender: "bot" }]);
-      } catch (error) {
-        console.error("Error processing message:", error);
-      }
+      localStorage.setItem("user", JSON.stringify(data.user));
+      setUser(data.user);
+      setShowAuthPopup(false);
+      setAuthData({ name: "", email: "", password: "" }); 
+    } catch (err) {
+      setError(err.response?.data?.message || "Authentication failed.");
+    }
+  };
 
-      setInput("");
-    };
+  const handleStartInterview = async () => {
+    if (!role || !difficulty) {
+      alert("Please select both role and difficulty.");
+      return;
+    }
 
-    const handleStartInterview = async () => {
-      if (!user) {
-        setShowAuthPopup(true);
-        return;
-      }
+    try {
+      const response = await axios.post(`http://localhost:5000/api/interviews/start`, {
+        userId: user._id,
+        role,
+        difficulty,
+      });
 
-      try {
-        const response = await axios.post(`http://localhost:5000/api/interviews/start`, { userId: user.id });
-        setMessages([{ text: response.data.question, sender: "bot" }]);
-      } catch (error) {
-        console.error("Error starting interview:", error);
-      }
-    };
+      localStorage.setItem("sessionId", response.data.sessionId);
+      setMessages([{ text: response.data.question, sender: "AI" }]);
+      setShowRolePopup(false);
+      setInterviewStarted(true);
+    } catch (error) {
+      console.error("Error starting interview:", error);
+    }
+  };
 
-    const handleSkipQuestion = async () => {
-      if (!user) {
-        setShowAuthPopup(true);
-        return;
-      }
+  const handleSendMessage = async () => {
+    if (!user) {
+      setShowAuthPopup(true);
+      return;
+    }
 
-      try {
-        const response = await axios.post(`http://localhost:5000/api/interviews/skip`, { userId: user.id });
-        setMessages([...messages, { text: response.data.question, sender: "bot" }]);
-      } catch (error) {
-        console.error("Error skipping question:", error);
-      }
-    };
+    if (!input.trim()) return;
 
-    const handleEndInterview = async () => {
-      if (!user) {
-        setShowAuthPopup(true);
-        return;
-      }
+    if (!role || !difficulty) {
+      setShowRolePopup(true);
+      return;
+    }
 
-      try {
-        const response = await axios.post(`http://localhost:5000/api/interviews/end`, { userId: user.id });
-        setMessages([...messages, { text: response.data.summary, sender: "bot" }]);
-      } catch (error) {
-        console.error("Error ending interview:", error);
-      }
-    };
-  // Error Solved
-    const handleAuth = async (e) => {
-      e.preventDefault();
-      const formData = new FormData(e.target);
-      const email = formData.get("email");
-      const name = formData.get("name");
-      const password = formData.get("password");
+    const userMessage = { text: input, sender: "You" };
+    setMessages([...messages, userMessage]);
 
-      try {
-        const endpoint = authMode === "login" ? "/auth/login" : "/auth/register";
-        
-        const response = await axios.post(`http://localhost:5000${endpoint}`, { name,email, password });
-        console.log(authMode === "login" ? response : "This is Not Login" );
+    try {
+      const response = await axios.post(`http://localhost:5000/api/interviews/process`, {
+        userId: user._id,
+        sessionId: localStorage.getItem("sessionId"),
+        answer: input,
+      });
 
-        setUser(response.data.user);
-        localStorage.setItem("user", JSON.stringify(response.data.user)); // Persist login
-        setShowAuthPopup(false);
-      } catch (error) {
-        console.error("Auth error:", error);
-      }
-    };
+      setMessages([...messages, userMessage, { text: response.data.feedback, sender: "AI" }, { text: response.data.nextQuestion, sender: "AI" }]);
+    } catch (error) {
+      console.error("Error processing message:", error);
+    }
 
-    const handleLogout = () => {
-      setUser(null);
-      localStorage.removeItem("user");
-    };
+    setInput("");
+  };
 
-    return (
-      <div className="flex h-screen bg-gradient-to-br from-white to-purple-100">
-        {/* Sidebar */}
-        <div className="w-80 bg-[#1C1C1C] p-4 flex flex-col">
-          <Button variant="ghost" className="w-full text-white" onClick={handleStartInterview}>
-            Begin a New Chat
-          </Button>
+  const handleSkipQuestion = async () => {
+    if (!user) {
+      setShowAuthPopup(true);
+      return;
+    }
 
-          <h3 className="text-sm font-medium text-zinc-400 mt-6">Recent Chats</h3>
-          <div className="space-y-1">
-            {history.map((chat, index) => (
-              <Button key={index} variant="ghost" className="w-full text-white">
-                {chat.title}
-              </Button>
-            ))}
-          </div>
+    try {
+      const response = await axios.post(`http://localhost:5000/api/interviews/skip`, {
+        userId: user._id,
+        sessionId: localStorage.getItem("sessionId"),
+      });
 
-          <Button variant="ghost" className="mt-auto text-white" onClick={user ? handleLogout : () => setShowAuthPopup(true)}>
-            {user ? "Logout" : "Login / Signup"}
-          </Button>
-        </div>
+      setMessages([...messages, { text: response.data.nextQuestion, sender: "AI" }]);
+    } catch (error) {
+      console.error("Error skipping question:", error);
+    }
+  };
 
-        {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col">
-          <header className="p-4 flex justify-between border-b">
-            <h1 className="text-xl font-semibold">CareerPilot AI</h1>
-            <div>
-              {!user ? (
-                <Button onClick={() => setShowAuthPopup(true)}>Login / Signup</Button>
-              ) : (
-                <span className="text-gray-500">Welcome, {user.name}</span>
-              )}
-            </div>
-          </header>
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    setUser(null);
+  };
 
-          <main className="flex-1 p-8 max-w-4xl mx-auto">
-            {messages.length === 0 ? (
-              <div className="text-center text-gray-500">Start a chat to begin.</div>
-            ) : (
-              messages.map((msg, index) => (
-                <div key={index} className={`mb-2 ${msg.sender === "user" ? "text-right" : "text-left"}`}>
-                  <span className={msg.sender === "user" ? "bg-blue-500 text-white px-3 py-1 rounded-lg" : "bg-gray-300 px-3 py-1 rounded-lg"}>
-                    {msg.text}
-                  </span>
-                </div>
-              ))
-            )}
-          </main>
-
-          <div className="p-4 border-t flex items-center">
-            <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type your message..." className="flex-1" />
-            <Button onClick={handleSendMessage} className="ml-2">Send</Button>
-          </div>
-        </div>
-
-        {/* Auth Popup */}
-        {showAuthPopup && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-            <div className="bg-white p-6 rounded-lg relative">
-              {/* Close Button */}
-              <button onClick={() => setShowAuthPopup(false)} className="absolute top-2 right-2 text-gray-600 hover:text-black">
-                ❌
-              </button>
-
-              <h2 className="text-lg font-bold mb-4">{authMode === "login" ? "Login" : "Signup"}</h2>
-              <form onSubmit={handleAuth} className="space-y-3">
-                <input type="email" name="email" placeholder="Email" required className="border p-2 w-full" />
-                {authMode === "login" ? null : <input type="text" name="name" placeholder="Name" required className="border p-2 w-full" />}
-                <input type="password" name="password" placeholder="Password" required className="border p-2 w-full" />
-                <Button type="submit" className="w-full">{authMode === "login" ? "Login" : "Signup"}</Button>
-              </form>
-              <Button variant="link" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")}>
-                {authMode === "login" ? "Create an account" : "Already have an account? Login"}
-              </Button>
-            </div>
-          </div>
-        )}
+  return (
+    <div className="flex h-screen bg-gradient-to-br from-white to-purple-100">
+      <div className="w-64 bg-gray-900 text-white flex flex-col p-4">
+        <h2 className="text-lg font-semibold mb-4">Chat History</h2>
+        <ul>
+          {history.map((item, index) => (
+            <li key={index} className="p-2 border-b border-gray-700">{item.question}</li>
+          ))}
+        </ul>
       </div>
-    );
-  }
 
-  export default Interview;
+      <div className="flex-1 flex flex-col">
+        <header className="p-4 flex justify-between border-b">
+          <h1 className="text-xl font-semibold">CareerPilot AI</h1>
+          <div>
+            {!user ? (
+              <Button onClick={() => setShowAuthPopup(true)}>Login / Signup</Button>
+            ) : (
+              <div className="flex items-center space-x-4">
+                <span className="text-gray-500">Welcome, {user.name}</span>
+                <Button onClick={handleLogout}>Logout</Button>
+              </div>
+            )}
+          </div>
+        </header>
+
+        <main className="flex-1 p-8 max-w-4xl mx-auto">
+          {showAuthPopup && (
+            <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center bg-black bg-opacity-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg">
+                <h2 className="text-lg font-semibold mb-4">{authMode === "login" ? "Login" : "Signup"}</h2>
+                {authMode === "signup" && (
+                  <Input placeholder="Enter name..." value={authData.name} onChange={(e) => setAuthData({ ...authData, name: e.target.value })} />
+                )}
+                <Input placeholder="Enter email..." value={authData.email} onChange={(e) => setAuthData({ ...authData, email: e.target.value })} />
+                <Input type="password" placeholder="Enter password..." value={authData.password} onChange={(e) => setAuthData({ ...authData, password: e.target.value })} />
+
+                {error && <p className="text-red-500">{error}</p>}
+
+                <div className="flex justify-between mt-4">
+                  <Button onClick={() => setShowAuthPopup(false)}>Cancel</Button>
+                  <Button onClick={handleAuth}>{authMode === "login" ? "Login" : "Signup"}</Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showRolePopup && (
+            <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center bg-black bg-opacity-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg">
+                <h2 className="text-lg font-semibold mb-4">Enter Your Job Role & Difficulty</h2>
+                <Input placeholder="Enter job role..." value={role} onChange={(e) => setRole(e.target.value)} />
+                <select className="mt-4 p-2 border rounded-md w-full" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+                  <option value="">Select Difficulty</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+                <div className="flex justify-between mt-4">
+                  <Button onClick={() => setShowRolePopup(false)}>Collapse</Button>
+                  <Button onClick={handleStartInterview}>Start Interview</Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg, index) => (
+            <div key={index} className={`mb-2 ${msg.sender === "You" ? "text-right" : ""}`}>
+              <p className={`inline-block p-2 rounded-lg ${msg.sender === "You" ? "bg-blue-500 text-white" : "bg-gray-200 text-black"}`}>
+                <strong>{msg.sender}: </strong>{msg.text}
+              </p>
+            </div>
+          ))}
+
+          <div className="mt-4 flex">
+            <Input className="flex-1" placeholder="Type your answer..." value={input} onChange={(e) => setInput(e.target.value)} />
+            <Button onClick={handleSendMessage}>Send</Button>
+            <Button onClick={handleSkipQuestion}>Skip</Button>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export default Interview;
